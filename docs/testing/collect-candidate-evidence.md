@@ -38,6 +38,8 @@ outside out/ and non-JSON filenames. Inspect a report before sharing it.
   accessible plugin_loader journal records from the last 30 minutes. It parses
   journal JSON records, counts entries rather than rendered text lines, and
   inspects MESSAGE in memory without saving log text.
+- SSH output is streamed into bounded in-memory buffers (3 MiB stdout and
+  64 KiB diagnostics); oversized output is marked incomplete.
 - An explicit list of remaining UI observations that still need the owner.
 
 Matching file hashes support deploy identity. They do not prove which code is

@@ -10,6 +10,7 @@ import re
 import shlex
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 CANDIDATE = "9a2cb963dd5289d88897832805206543098227c4"
@@ -33,6 +34,7 @@ JOURNAL = (
     "--unit=plugin_loader.service", "--since=-30min", "--lines=500",
 )
 MAX_SSH_OUTPUT_BYTES = 3 * 1024 * 1024
+MAX_SSH_ERROR_BYTES = 64 * 1024
 SAFE_HOST = re.compile(r"^deck@[A-Za-z0-9][A-Za-z0-9.-]*$")
 SAFE_VERSION = re.compile(r"^[A-Za-z0-9 ._()+,:/-]{1,160}$")
 ACTIVE_STATES = {
@@ -67,31 +69,72 @@ def ssh_query(config: dict, remote_argv: tuple[str, ...] | list[str]) -> dict:
         "-i", config["identity"], config["target"], command,
     ]
     try:
-        proc = subprocess.run(
-            argv, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=config["timeout"] + 5,
-            check=False, shell=False,
+        proc = subprocess.Popen(
+            argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, shell=False,
         )
     except FileNotFoundError:
         return {"state": "ssh_client_missing"}
-    except subprocess.TimeoutExpired:
-        return {"state": "timed_out"}
     except OSError:
         return {"state": "local_process_error"}
-    output = proc.stdout
-    if len(output.encode("utf-8")) > MAX_SSH_OUTPUT_BYTES:
+
+    stdout_data, stderr_data = bytearray(), bytearray()
+    overflow = {"stdout": False, "stderr": False}
+
+    def drain(pipe, buffer: bytearray, limit: int, key: str) -> None:
+        while True:
+            chunk = pipe.read(65536)
+            if not chunk:
+                return
+            available = limit - len(buffer)
+            if available > 0:
+                buffer.extend(chunk[:available])
+            if len(chunk) > available:
+                overflow[key] = True
+
+    readers = (
+        threading.Thread(
+            target=drain,
+            args=(proc.stdout, stdout_data, MAX_SSH_OUTPUT_BYTES, "stdout"),
+            daemon=True,
+        ),
+        threading.Thread(
+            target=drain,
+            args=(proc.stderr, stderr_data, MAX_SSH_ERROR_BYTES, "stderr"),
+            daemon=True,
+        ),
+    )
+    for reader in readers:
+        reader.start()
+    try:
+        proc.wait(timeout=config["timeout"] + 5)
+        timed_out = False
+    except subprocess.TimeoutExpired:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+        proc.wait()
+        timed_out = True
+    for reader in readers:
+        reader.join()
+    if timed_out:
+        return {"state": "timed_out"}
+    if overflow["stdout"] or overflow["stderr"]:
         return {"state": "output_limit"}
+    output = stdout_data.decode("utf-8", errors="replace")
+    error_output = stderr_data.decode("utf-8", errors="replace")
     if proc.returncode == 0:
         state = "ok"
     elif proc.returncode == 255:
-        state = ssh_error(proc.stderr)
+        state = ssh_error(error_output)
     else:
         state = "remote_command_failed"
     return {
         "state": state,
         "exit_code": proc.returncode,
         "stdout": output,
-        "stderr": proc.stderr,
+        "stderr": error_output,
     }
 
 
