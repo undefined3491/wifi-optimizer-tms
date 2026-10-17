@@ -29,8 +29,10 @@ BINARIES = {
 }
 JOURNAL = (
     "/usr/bin/journalctl", "--no-pager", "--output=json",
+    "--output-fields=MESSAGE",
     "--unit=plugin_loader.service", "--since=-30min", "--lines=500",
 )
+MAX_SSH_OUTPUT_BYTES = 3 * 1024 * 1024
 SAFE_HOST = re.compile(r"^deck@[A-Za-z0-9][A-Za-z0-9.-]*$")
 SAFE_VERSION = re.compile(r"^[A-Za-z0-9 ._()+,:/-]{1,160}$")
 ACTIVE_STATES = {
@@ -77,7 +79,7 @@ def ssh_query(config: dict, remote_argv: tuple[str, ...] | list[str]) -> dict:
     except OSError:
         return {"state": "local_process_error"}
     output = proc.stdout
-    if len(output.encode("utf-8")) > 262144:
+    if len(output.encode("utf-8")) > MAX_SSH_OUTPUT_BYTES:
         return {"state": "output_limit"}
     if proc.returncode == 0:
         state = "ok"
@@ -103,6 +105,25 @@ def candidate_hash(repo: Path, relative: str) -> str:
     return hashlib.sha256(proc.stdout).hexdigest()
 
 
+def file_diagnostic_states(stderr: str) -> dict[str, str]:
+    states = {}
+    for line in stderr.lower().splitlines():
+        if "no such file or directory" in line:
+            state = "missing"
+        elif "permission denied" in line:
+            state = "permission_limited"
+        else:
+            continue
+        for name in FILES:
+            path = f"{PLUGIN_DIR}/{name}".lower()
+            for match in re.finditer(re.escape(path), line):
+                end = match.end()
+                if end == len(line) or line[end] in {":", "'", '"'}:
+                    states[name] = state
+                    break
+    return states
+
+
 def collect_files(config: dict, expected: dict[str, str]) -> dict:
     paths = [f"{PLUGIN_DIR}/{name}" for name in FILES]
     query = ssh_query(config, ["/usr/bin/sha256sum", "--", *paths])
@@ -115,17 +136,14 @@ def collect_files(config: dict, expected: dict[str, str]) -> dict:
         prefix = PLUGIN_DIR + "/"
         if path.startswith(prefix):
             found[path[len(prefix):]] = parts[0].lower()
-    diagnostic = query.get("stderr", "").lower()
+    diagnostic_states = file_diagnostic_states(query.get("stderr", ""))
     rows = []
     for name in FILES:
         actual, wanted = found.get(name), expected.get(name)
-        device_path = f"{PLUGIN_DIR}/{name}".lower()
         if actual:
             state = "match" if actual == wanted else "mismatch"
-        elif device_path in diagnostic and "no such file or directory" in diagnostic:
-            state = "missing"
-        elif device_path in diagnostic and "permission denied" in diagnostic:
-            state = "permission_limited"
+        elif name in diagnostic_states:
+            state = diagnostic_states[name]
         elif query["state"] != "ok":
             state = query["state"]
         else:
@@ -283,7 +301,13 @@ def main() -> int:
     output = output.expanduser()
     if not output.is_absolute():
         output = repo / output
-    out_root = (repo / "out").resolve()
+    repo_root = repo.resolve()
+    out_path = repo_root / "out"
+    if out_path.is_symlink():
+        parser.error("repository out/ must not be a symlink")
+    out_root = out_path.resolve()
+    if out_root != out_path:
+        parser.error("repository out/ must resolve to its in-checkout path")
     output = output.resolve()
     try:
         output.relative_to(out_root)
@@ -331,6 +355,8 @@ def main() -> int:
     try:
         output.parent.mkdir(parents=True, exist_ok=True)
         # Re-resolve after creating the parent to catch symlinked path components.
+        if out_path.is_symlink() or out_path.resolve() != out_root:
+            raise ValueError("repository out/ path changed")
         output = output.resolve()
         output.relative_to(out_root)
         with output.open("x", encoding="utf-8", newline="\n") as stream:
@@ -342,7 +368,7 @@ def main() -> int:
         return 2
 
     matches = all(row["state"] == "match" for row in files["files"])
-    services_complete = all(
+    services_observed = all(
         isinstance(value, str) and value in ACTIVE_STATES
         for value in services.values()
     )
@@ -358,20 +384,32 @@ def main() -> int:
     print(f"Candidate files: {'all match' if matches else 'review required'}")
     print(f"plugin_loader: {services.get('plugin_loader.service')}")
     print(f"OpenSSL journal scan: {openssl.get('state')}, matches={openssl.get('matching_entry_count', 'unknown')}")
-    if matches and services_complete and binaries_complete and journal_complete:
+    services_clean = (
+        services_observed
+        and services.get("plugin_loader.service") == "active"
+        and services.get("NetworkManager.service") == "active"
+        and any(
+            services.get(unit) == "active"
+            for unit in ("wpa_supplicant.service", "iwd.service")
+        )
+    )
+    if (
+        files["query_state"] == "ok" and matches and services_clean
+        and binaries_complete and journal_complete
+    ):
         return 0
     known_failure = (
         any(row["state"] in {"mismatch", "missing"} for row in files["files"])
         or openssl.get("matching_entry_count", 0) > 0
-        or any(
-            services.get(unit) in {"failed", "inactive"}
-            for unit in ("plugin_loader.service", "NetworkManager.service")
-        )
         or (
-            services_complete
-            and not any(
-                services.get(unit) == "active"
-                for unit in ("wpa_supplicant.service", "iwd.service")
+            services_observed
+            and (
+                services.get("plugin_loader.service") != "active"
+                or services.get("NetworkManager.service") != "active"
+                or not any(
+                    services.get(unit) == "active"
+                    for unit in ("wpa_supplicant.service", "iwd.service")
+                )
             )
         )
     )
