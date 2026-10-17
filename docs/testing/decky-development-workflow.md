@@ -21,7 +21,7 @@ Use a standalone React DevTools instance on the development PC and its IP in Dec
 
 ## Backend, deployment and current inventory
 
-The official plugin template contains SSH/rsync deployment tasks. They establish a supported development workflow; they do not require every tester to enable SSH or authorize copying their password-oriented snippets unchanged. Our existing VS Code deployment tasks likewise use SSH. Local builds/CI and device runtime checks remain separate.
+The official plugin template contains SSH/rsync deployment tasks. They establish a supported development workflow; they do not require every tester to enable SSH or authorize copying their password-oriented snippets unchanged. Our existing VS Code deployment tasks likewise use SSH. Local builds/CI and device runtime checks remain separate. For a pinned Stage 0 candidate, the optional [read-only SSH evidence collector](collect-candidate-evidence.md) compares deployed file hashes and captures bounded service/journal observations; it supplements rather than replaces the inventory or owner-operated UI checks.
 
 For the current Stage 0 inventory, use the [standalone collector in Konsole](collect-inventory.md); no CEF, React DevTools or SSH setup is needed. It captures selected Linux state that frontend inspection alone does not establish. Later remote backend work can use the same collector/commands over SSH, with deliberate command scope and privileged execution only where required. Python/plugin logs and system/service observations complement CEF console output.
 

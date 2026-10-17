@@ -262,24 +262,40 @@ Ustalenia z sesji walidacyjnych 2026-10-17, obowiązujące dopóki urządzenie/w
 
 ### Transport SSH (agent → Deck, read-only)
 
-- Klucz publiczny dla sesji agenta: `$env:TEMP\steamdeck-id.pub` na PC operatora
-  (eksport klucza lokalnego agenta: `ssh-add -L` → zapis do pliku `.pub`).
-  Plik jest sesyjny — przy nowej sesji wyeksportować ponownie. Prywatny klucz
-  nigdy nie jest commitowany ani wysyłany na urządzenie.
-- Szablon każdej komendy read-only:
+- Zestaw potwierdzony w tej sesji (2026-10-17): selektor tożsamości
+  $env:TEMP\steamdeck-agent-7.pub oraz plik znanych hostów
+  $env:TEMP\steamdeck-knownhosts-verified. To ścieżki tymczasowe PC, nie
+  repozytorium; w nowej sesji mogą nie istnieć. Nie zakładać, że
+  steamdeck-id.pub wskazuje tę samą tożsamość.
+- Opcja -i wskazuje tożsamość klienta: plik klucza prywatnego albo publiczny
+  selektor pasujący do klucza prywatnego załadowanego w ssh-agent. Nie podawać
+  klucza serwera Decka (/etc/ssh/ssh_host_ed25519_key.pub). Plik
+  /home/deck/.ssh/authorized_keys na Decku zawiera dozwolone klucze publiczne
+  klientów; jego fingerprint sam nie dowodzi, że PC wybrał odpowiadającą mu
+  tożsamość prywatną.
+- W poprzedniej próbie Deck odpowiadał: sshd był aktywny i nasłuchiwał na
+  porcie 22, a log pokazywał połączenia resetowane podczas publickey preauth.
+  To wskazywało na nieudaną autoryzację klienta, nie na wyłączony serwer SSH.
+  Sam wpis w authorized_keys nie potwierdza, którego klucza użył klient.
+- Szablon PowerShell dla odczytu:
 
-  ```
-  ssh -o BatchMode=yes -o ConnectTimeout=30 -o IdentitiesOnly=yes -i $env:TEMP\steamdeck-id.pub deck@steamdeck '<cmd>'
-  ```
+      $deckIdentity = Join-Path $env:TEMP 'steamdeck-agent-7.pub'
+      $deckKnownHosts = Join-Path $env:TEMP 'steamdeck-knownhosts-verified'
+      ssh -o BatchMode=yes -o ConnectTimeout=30 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "-o UserKnownHostsFile=$deckKnownHosts" -i $deckIdentity deck@steamdeck '<cmd>'
 
-- `IdentitiesOnly=yes` jest **osobną regułą**: przy ≥6 kluczach w agencie SSH
+- IdentitiesOnly=yes jest osobną regułą: przy ≥6 kluczach w agencie SSH
   odrzuca logowanie "Too many authentication failures" bez tego przełącznika.
-- Host `steamdeck` rozwiązuje się na PC operatora (DNS/hosts); `sshd` na Decku
-  włącza owner w Panelu sterowania na życzenie.
-- Złożone komendy i bloki skryptowe: **nie cytować inline przez PowerShell**
-  (PowerShell zniekształca cudzysłowy i `$`). Wykonać: zapis do pliku →
-  `scp` na Deck (`/tmp/<script>.sh`) → `ssh … 'bash /tmp/<script>.sh'`.
-  Pliki tymczasowe na PC operatora trzymać w `$env:TEMP\opencode\`.
+  StrictHostKeyChecking=yes wymaga wcześniejszego zweryfikowania host key;
+  nie wyłączaj kontroli i nie ufaj automatycznie nowemu kluczowi.
+- Jeśli potwierdzony selektor lub plik known_hosts nie istnieje, użyć
+  tożsamości skonfigurowanej przez właściciela i zweryfikowanego pliku
+  known_hosts. Agent nie otwiera ani nie odczytuje sejfu Bitwarden. Host
+  steamdeck rozwiązuje się na PC operatora (DNS/hosts); sshd na Decku włącza
+  owner w Panelu sterowania na życzenie.
+- Złożone komendy i bloki skryptowe: nie cytować inline przez PowerShell
+  (PowerShell zniekształca cudzysłowy i $). Wykonać: zapis do pliku → scp na
+  Deck (/tmp/<script>.sh) → ssh … 'bash /tmp/<script>.sh'. Pliki tymczasowe na
+  PC operatora trzymać w $env:TEMP\opencode\.
 
 ### Sudo — podział ról
 
