@@ -157,6 +157,7 @@ class DeviceFixFixture:
         self.fs = {}
         self.readonly_paths = set()
         self.read_fail_paths = set()
+        self.read_missing_paths = set()
         self.pcie_present = True
         self.pcie_device = PCIE_DEVICE
         self.device_info = {}
@@ -204,6 +205,8 @@ class DeviceFixFixture:
         def _stub_open(path, mode="r", *args, **kwargs):
             p = str(path)
             if "r" in mode and "+" not in mode:
+                if p in fixture.read_missing_paths:
+                    raise FileNotFoundError(f"simulated disappearing sysfs knob: {p}")
                 if p in fixture.read_fail_paths:
                     raise OSError(f"simulated read failure: {p}")
                 if p in fixture.fs:
@@ -440,8 +443,8 @@ class DeviceFixFixture:
         self.services["wpa_supplicant"] = {
             "active": wpa_active, "enabled": wpa_enabled}
 
-    def seed_pcie(self, contents, readonly=(), read_fail=()):
-        """Seed sysfs PCIe files. Omitted names stay missing (silent skip)."""
+    def seed_pcie(self, contents, readonly=(), read_fail=(), read_missing=()):
+        """Seed sysfs PCIe files and optional write/read failure behavior."""
         for name, content in contents.items():
             if "/" in name:
                 path = f"{self.pcie_device}/{name}"
@@ -457,6 +460,11 @@ class DeviceFixFixture:
             (f"{self.pcie_device}/{n}" if "/" in n
              else f"{self.pcie_device}/link/{n}")
             for n in read_fail
+        }
+        self.read_missing_paths = {
+            (f"{self.pcie_device}/{n}" if "/" in n
+             else f"{self.pcie_device}/link/{n}")
+            for n in read_missing
         }
 
     def pcie_path(self, name):
@@ -743,7 +751,7 @@ class PcieVerifyTests(unittest.TestCase):
             f"failure must name the file: {detail!r}")
         assert f"aspm-skip:{f.pcie_path('l0s_aspm')}" not in notes
 
-    def test_missing_path_still_skipped(self):
+    def test_missing_path_is_skipped_with_note(self):
         f = DeviceFixFixture()
         contents = {
             name: ("0" if name != PCIE_POWER else "on")
@@ -756,13 +764,34 @@ class PcieVerifyTests(unittest.TestCase):
         code, detail, notes = self.check_result(
             f.plugin._apply_pcie_aspm_fix(True))
         assert (code, detail) == (None, None), (
-            f"missing path must stay a silent skip: {(code, detail)!r}")
-        assert notes == [], f"all-writable converge must note nothing: {notes!r}"
+            f"missing path must not fail: {(code, detail)!r}")
+        assert notes == [f"aspm-skip:{f.pcie_path('l1_2_pcipm')}"], (
+            f"missing path must be noted as skipped: {notes!r}")
         assert f.pcie_path("l1_2_pcipm") not in f.fs, (
             "missing path must stay absent: helper must not create it")
         for name, want in contents.items():
             assert f.fs[os_path(f, name)].strip() == want, (
                 f"{name} must converge to {want!r}")
+
+    def test_path_missing_during_verification_is_skipped_with_note(self):
+        f = DeviceFixFixture()
+        f.seed_pcie(self.desired_contents(True), read_missing=("l0s_aspm",))
+        code, detail, notes = self.check_result(
+            f.plugin._apply_pcie_aspm_fix(True))
+        assert (code, detail) == (None, None), (
+            f"disappearing sysfs knob must not fail: {(code, detail)!r}")
+        assert notes == [f"aspm-skip:{f.pcie_path('l0s_aspm')}"], (
+            f"missing verification path must be noted as skipped: {notes!r}")
+
+    def test_other_verification_read_error_still_fails_named(self):
+        f = DeviceFixFixture()
+        f.seed_pcie(self.desired_contents(True), read_fail=("l0s_aspm",))
+        code, detail, notes = self.check_result(
+            f.plugin._apply_pcie_aspm_fix(True))
+        assert code == "pcie_failed", (
+            f"non-ENOENT read error must still fail: {(code, detail)!r}")
+        assert "l0s_aspm" in (detail or ""), (
+            f"failure must name the file: {detail!r}")
 
 
 def os_path(fixture, name):

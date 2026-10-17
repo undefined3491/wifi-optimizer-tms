@@ -1019,14 +1019,15 @@ class Plugin:
         (None, None, notes), failure is ("pcie_failed", detail, notes).
 
         S-OPT-02 (D3): verify-after-write per file (link L-state knobs AND
-        power/control). A missing path keeps the current silent skip; a
-        file already at the desired content counts as OK whether or not
-        the write succeeded (unsupported-but-unchanged is an
-        "aspm-skip:<path>" note for the caller's additive errors[], not a
+        power/control). A missing knob is skipped with an
+        "aspm-skip:<path>" note for the caller's additive errors[], both
+        when the write or verification read reports ENOENT. A file already
+        at the desired content counts as OK whether or not the write
+        succeeded (unsupported-but-unchanged is also a skip note, not a
         failure). ALL files whose content differs after the attempt are
         collected (no return-on-first-OSError) and fail with pcie_failed
-        listing them; a read failure counts that file as failed.
-        An absent device or absent knobs stay silent no-ops."""
+        listing them; other read failures count as failed. An absent device
+        stays a no-op."""
         notes = []
         failed = []
         try:
@@ -1056,7 +1057,8 @@ class Plugin:
                     wrote = True
                     write_error = None
                 except FileNotFoundError:
-                    # Absent knob: silent no-op, never verified.
+                    # Unsupported/missing sysfs knob: visible skip, no failure.
+                    notes.append(f"aspm-skip:{path}")
                     continue
                 except Exception as e:
                     wrote = False
@@ -1064,6 +1066,10 @@ class Plugin:
                 try:
                     with open(path, "r") as f:
                         current = f.read().strip()
+                except FileNotFoundError:
+                    # The sysfs knob disappeared after write; it is unsupported.
+                    notes.append(f"aspm-skip:{path}")
+                    continue
                 except Exception as e:
                     detail = f"{path}: read failed: {e}"
                     decky.logger.error(f"PCIe ASPM verify failed: {detail}")
