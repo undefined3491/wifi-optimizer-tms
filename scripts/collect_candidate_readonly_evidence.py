@@ -28,7 +28,7 @@ BINARIES = {
     "iw": ("/usr/bin/iw", "--version"),
 }
 JOURNAL = (
-    "/usr/bin/journalctl", "--no-pager", "--output=cat",
+    "/usr/bin/journalctl", "--no-pager", "--output=json",
     "--unit=plugin_loader.service", "--since=-30min", "--lines=500",
 )
 SAFE_HOST = re.compile(r"^deck@[A-Za-z0-9][A-Za-z0-9.-]*$")
@@ -49,7 +49,7 @@ def ssh_error(stderr: str) -> str:
     ):
         if marker in text:
             return state
-    return "ssh_or_remote_command_failed"
+    return "ssh_transport_failed"
 
 
 def ssh_query(config: dict, remote_argv: tuple[str, ...] | list[str]) -> dict:
@@ -79,8 +79,14 @@ def ssh_query(config: dict, remote_argv: tuple[str, ...] | list[str]) -> dict:
     output = proc.stdout
     if len(output.encode("utf-8")) > 262144:
         return {"state": "output_limit"}
+    if proc.returncode == 0:
+        state = "ok"
+    elif proc.returncode == 255:
+        state = ssh_error(proc.stderr)
+    else:
+        state = "remote_command_failed"
     return {
-        "state": "ok" if proc.returncode == 0 else ssh_error(proc.stderr),
+        "state": state,
         "exit_code": proc.returncode,
         "stdout": output,
         "stderr": proc.stderr,
@@ -109,12 +115,21 @@ def collect_files(config: dict, expected: dict[str, str]) -> dict:
         prefix = PLUGIN_DIR + "/"
         if path.startswith(prefix):
             found[path[len(prefix):]] = parts[0].lower()
+    diagnostic = query.get("stderr", "").lower()
     rows = []
     for name in FILES:
         actual, wanted = found.get(name), expected.get(name)
-        state = "match" if actual and actual == wanted else (
-            "mismatch" if actual else "unreadable"
-        )
+        device_path = f"{PLUGIN_DIR}/{name}".lower()
+        if actual:
+            state = "match" if actual == wanted else "mismatch"
+        elif device_path in diagnostic and "no such file or directory" in diagnostic:
+            state = "missing"
+        elif device_path in diagnostic and "permission denied" in diagnostic:
+            state = "permission_limited"
+        elif query["state"] != "ok":
+            state = query["state"]
+        else:
+            state = "unreadable"
         rows.append({
             "path": name, "expected_sha256": wanted,
             "device_sha256": actual, "state": state,
@@ -145,7 +160,7 @@ def collect_binaries(config: dict) -> dict:
         result[name] = (
             {"state": "ok", "version": first[:160]}
             if query["state"] == "ok" and SAFE_VERSION.fullmatch(first)
-            else {"state": query["state"]}
+            else {"state": query["state"] if query["state"] != "ok" else "invalid_output"}
         )
     return result
 
@@ -153,32 +168,51 @@ def collect_binaries(config: dict) -> dict:
 def collect_openssl(config: dict) -> dict:
     query = ssh_query(config, JOURNAL)
     result = {"window": "last 30 minutes, up to 500 plugin_loader entries"}
-    if query["state"] != "ok":
-        result["state"] = query["state"]
-        return result
     output = query.get("stdout", "")
-    diagnostic = (output + query.get("stderr", "")).lower()
-    if any(marker in diagnostic for marker in (
+    diagnostic = query.get("stderr", "").lower()
+    if query["state"] in {"ok", "remote_command_failed"} and any(marker in diagnostic for marker in (
         "insufficient permissions", "no journal files were opened",
         "not seeing messages from other users", "permission denied",
     )):
         result["state"] = "permission_limited"
         return result
-    entries = [
-        line for line in output.splitlines()
-        if line.strip() and not line.strip().startswith("-- No entries --")
-    ]
-    if not entries:
+    if query["state"] != "ok":
+        result["state"] = query["state"]
+        return result
+    records = []
+    invalid_record_count = 0
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            invalid_record_count += 1
+            continue
+        if isinstance(record, dict):
+            records.append(record)
+        else:
+            invalid_record_count += 1
+    if invalid_record_count:
+        result.update({
+            "state": "invalid_output",
+            "accessible_entry_count": len(records),
+            "invalid_record_count": invalid_record_count,
+            "raw_lines_saved": False,
+        })
+        return result
+    if not records:
         result.update({
             "state": "searched_empty_window",
             "accessible_entry_count": 0,
-            "matching_line_count": 0,
+            "matching_entry_count": 0,
             "raw_lines_saved": False,
         })
         return result
     categories, count = set(), 0
-    for line in entries:
-        lowered = line.lower()
+    for record in records:
+        message = record.get("MESSAGE", "")
+        lowered = message.lower() if isinstance(message, str) else str(message).lower()
         matched = []
         if "libcrypto" in lowered:
             matched.append("libcrypto")
@@ -189,8 +223,8 @@ def collect_openssl(config: dict) -> dict:
             categories.update(matched)
     result.update({
         "state": "searched",
-        "accessible_entry_count": len(entries),
-        "matching_line_count": count,
+        "accessible_entry_count": len(records),
+        "matching_entry_count": count,
         "match_categories": sorted(categories),
         "raw_lines_saved": False,
     })
@@ -242,12 +276,28 @@ def main() -> int:
         "identity": str(identity.resolve()),
         "known_hosts": str(known_hosts.resolve()), "target": args.target,
     }
+    output = args.output or (
+        repo / "out" / "device" / "candidate-9a2cb96" /
+        f"readonly-evidence-{dt.datetime.now(dt.timezone.utc):%Y%m%dT%H%M%S%fZ}.json"
+    )
+    output = output.expanduser()
+    if not output.is_absolute():
+        output = repo / output
+    out_root = (repo / "out").resolve()
+    output = output.resolve()
+    try:
+        output.relative_to(out_root)
+    except ValueError:
+        parser.error("--output must resolve to a file under this repository's ignored out/ directory")
+    if output == out_root or output.suffix.lower() != ".json":
+        parser.error("--output must name a .json report file under out/")
+
     files = collect_files(config, expected)
     services = collect_services(config)
     binaries = collect_binaries(config)
     openssl = collect_openssl(config)
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "collected_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
         "candidate_commit": CANDIDATE,
         "collector": {
@@ -278,27 +328,54 @@ def main() -> int:
             "Inspect software hashes and service state before sharing the report.",
         ],
     }
-    output = args.output or (
-        repo / "out" / "device" / "candidate-9a2cb96" /
-        f"readonly-evidence-{dt.datetime.now(dt.timezone.utc):%Y%m%dT%H%M%S%fZ}.json"
-    )
-    output = output.expanduser().resolve()
     try:
         output.parent.mkdir(parents=True, exist_ok=True)
+        # Re-resolve after creating the parent to catch symlinked path components.
+        output = output.resolve()
+        output.relative_to(out_root)
         with output.open("x", encoding="utf-8", newline="\n") as stream:
             json.dump(report, stream, indent=2, ensure_ascii=True)
             stream.write("\n")
         output.chmod(0o600)
-    except OSError:
+    except (OSError, ValueError):
         print("Could not save the local evidence report.", file=sys.stderr)
         return 2
 
     matches = all(row["state"] == "match" for row in files["files"])
+    services_complete = all(
+        isinstance(value, str) and value in ACTIVE_STATES
+        for value in services.values()
+    )
+    binaries_complete = all(
+        isinstance(value, dict) and value.get("state") == "ok"
+        for value in binaries.values()
+    )
+    journal_complete = (
+        openssl.get("state") in {"searched", "searched_empty_window"}
+        and openssl.get("matching_entry_count") == 0
+    )
     print(f"Saved local read-only report: {output}")
     print(f"Candidate files: {'all match' if matches else 'review required'}")
     print(f"plugin_loader: {services.get('plugin_loader.service')}")
-    print(f"OpenSSL journal scan: {openssl.get('state')}, matches={openssl.get('matching_line_count', 'unknown')}")
-    return 0 if matches else 1
+    print(f"OpenSSL journal scan: {openssl.get('state')}, matches={openssl.get('matching_entry_count', 'unknown')}")
+    if matches and services_complete and binaries_complete and journal_complete:
+        return 0
+    known_failure = (
+        any(row["state"] in {"mismatch", "missing"} for row in files["files"])
+        or openssl.get("matching_entry_count", 0) > 0
+        or any(
+            services.get(unit) in {"failed", "inactive"}
+            for unit in ("plugin_loader.service", "NetworkManager.service")
+        )
+        or (
+            services_complete
+            and not any(
+                services.get(unit) == "active"
+                for unit in ("wpa_supplicant.service", "iwd.service")
+            )
+        )
+    )
+    return 1 if known_failure else 2
 
 
 if __name__ == "__main__":
