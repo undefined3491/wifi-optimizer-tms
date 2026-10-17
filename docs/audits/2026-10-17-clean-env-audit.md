@@ -1,9 +1,9 @@
 # clean_env call-site audit (S-BE-06 mechanism fix)
 
-Date: 2026-10-17. Baseline: `5d48ded` (main); audited file `main.py` unchanged
-since baseline except the D1 default flip (`clean_env: bool = False` →
-`True` at `main.py:271`). Line numbers below are post-flip (the flip shifts
-no lines; it edits one default on line 271).
+Date: 2026-10-17. Baseline: `5d48ded` (main); audited file `main.py` was
+unchanged since baseline except the D1 default flip (`clean_env: bool = False` →
+`True` at `main.py:271`) until the 2026-10-18 ASPM skip-note fix. That fix
+changed no command call sites; references below reflect their current positions.
 
 Method: AST walk of `main.py` — every `Call` node whose `func` is the
 attribute `_run_cmd` (direct `self._run_cmd(...)` sites), plus every
@@ -41,67 +41,67 @@ updater paths).
 - `main.py:910` → `/usr/bin/nmcli` (`radio wifi on`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
 - `main.py:913` → `/usr/bin/nmcli` (`con up uuid`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
 - `main.py:940` → `/usr/bin/nmcli` (`con show --active` poll) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:1297` → `/usr/bin/sysctl` (`-w` uninstall) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:1318` → `/usr/bin/tc` (`qdisc del` uninstall) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:1338` → `/usr/bin/ip` (`link set txqueuelen 1000` uninstall) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:1530` → `/usr/bin/nmcli` (`con mod`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:1659` → `/usr/bin/iw` (`dev`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:1660` → `/usr/bin/iw` (`reg get`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:1661` → `/usr/bin/uname` (`-r`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:1817` → `/usr/bin/iw` (`get power_save`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:1824` → `/usr/bin/nmcli` (`802-11-wireless.bssid`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:1845` → `/usr/bin/nmcli` (`IP4.DNS`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:1851` → `/usr/bin/nmcli` (`ipv6.method`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:1869` → `/usr/bin/nmcli` (`802-11-wireless.band`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:1889` → `/usr/bin/sysctl` (`-n`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:1991` → `/usr/bin/iw` (`get power_save`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:1998` → `/usr/bin/iw` (`dev link`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:2018` → `/usr/bin/iw` (`dev info`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:2044` → `/usr/bin/nmcli` (`802-11-wireless.bssid`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:2067` → `/usr/bin/nmcli` (`IP4.ADDRESS`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:2078` → `/usr/bin/nmcli` (`IP4.DNS`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:2085` → `/usr/bin/nmcli` (`ipv6.method`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:2103` → `/usr/bin/nmcli` (`802-11-wireless.band`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:2125` → `/usr/bin/sysctl` (`-n`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:2203` → `/usr/bin/iw` (`set power_save`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:2285` → `/usr/bin/iw` (`set power_save on`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:2473` → `/usr/bin/iw` (`dev link`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:2709` → `/usr/bin/iw` (`dev link`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:3180` → `/usr/bin/sysctl` (`-w`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:3216` → `/usr/bin/sysctl` (`-w`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:3241` → `/usr/bin/ip` (`link set txqueuelen`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:3254` → `/usr/bin/ip` (`link set txqueuelen 256`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:3277` → `/usr/bin/ip` (`link set txqueuelen 1000`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:3310` → `/usr/bin/tc` (`qdisc show`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:3346` → `/usr/bin/modprobe` (fallback `/usr/sbin/modprobe`, `sch_cake`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:3347` → `/usr/bin/tc` (`qdisc replace ... cake`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:3360` → `/usr/bin/ip` (`link set txqueuelen 256`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:3383` → `/usr/bin/tc` (`qdisc del`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:3407` → `/usr/bin/ip` (`link set txqueuelen 2000`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:3429` → `/usr/bin/ip` (`link set txqueuelen 1000`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:3756` → `/usr/bin/sysctl` (`-w` reset) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:3778` → `/usr/bin/tc` (`qdisc del` reset) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:3798` → `/usr/bin/ip` (`link set txqueuelen 1000` reset) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
-- `main.py:3861` → `/usr/bin/iw` (`set power_save off` reset) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:1303` → `/usr/bin/sysctl` (`-w` uninstall) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:1324` → `/usr/bin/tc` (`qdisc del` uninstall) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:1344` → `/usr/bin/ip` (`link set txqueuelen 1000` uninstall) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:1536` → `/usr/bin/nmcli` (`con mod`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:1665` → `/usr/bin/iw` (`dev`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:1666` → `/usr/bin/iw` (`reg get`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:1667` → `/usr/bin/uname` (`-r`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:1823` → `/usr/bin/iw` (`get power_save`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:1830` → `/usr/bin/nmcli` (`802-11-wireless.bssid`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:1851` → `/usr/bin/nmcli` (`IP4.DNS`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:1857` → `/usr/bin/nmcli` (`ipv6.method`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:1875` → `/usr/bin/nmcli` (`802-11-wireless.band`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:1895` → `/usr/bin/sysctl` (`-n`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:1997` → `/usr/bin/iw` (`get power_save`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:2004` → `/usr/bin/iw` (`dev link`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:2024` → `/usr/bin/iw` (`dev info`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:2050` → `/usr/bin/nmcli` (`802-11-wireless.bssid`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:2073` → `/usr/bin/nmcli` (`IP4.ADDRESS`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:2084` → `/usr/bin/nmcli` (`IP4.DNS`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:2091` → `/usr/bin/nmcli` (`ipv6.method`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:2109` → `/usr/bin/nmcli` (`802-11-wireless.band`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:2131` → `/usr/bin/sysctl` (`-n`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:2209` → `/usr/bin/iw` (`set power_save`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:2291` → `/usr/bin/iw` (`set power_save on`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:2479` → `/usr/bin/iw` (`dev link`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:2715` → `/usr/bin/iw` (`dev link`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:3186` → `/usr/bin/sysctl` (`-w`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:3222` → `/usr/bin/sysctl` (`-w`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:3247` → `/usr/bin/ip` (`link set txqueuelen`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:3260` → `/usr/bin/ip` (`link set txqueuelen 256`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:3283` → `/usr/bin/ip` (`link set txqueuelen 1000`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:3316` → `/usr/bin/tc` (`qdisc show`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:3352` → `/usr/bin/modprobe` (fallback `/usr/sbin/modprobe`, `sch_cake`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:3353` → `/usr/bin/tc` (`qdisc replace ... cake`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:3366` → `/usr/bin/ip` (`link set txqueuelen 256`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:3389` → `/usr/bin/tc` (`qdisc del`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:3413` → `/usr/bin/ip` (`link set txqueuelen 2000`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:3435` → `/usr/bin/ip` (`link set txqueuelen 1000`) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:3762` → `/usr/bin/sysctl` (`-w` reset) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:3784` → `/usr/bin/tc` (`qdisc del` reset) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:3804` → `/usr/bin/ip` (`link set txqueuelen 1000` reset) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
+- `main.py:3867` → `/usr/bin/iw` (`set power_save off` reset) → inherit safe default (D1); absolute-path system binary, no bundled-env need.
 
 ## `to_thread` wrapper sites (14, all explicit positional `True` — kept)
 
 | Site | Command | Disposition |
 | ---- | ------- | ----------- |
-| main.py:3962 (`check_for_update`) | `/usr/bin/curl` release check | KEEP explicit `True` (D2 addendum; `check_delivery.py:388-395` requires the literal). |
-| main.py:4222 (`_update_worker`) | `curl_cmd` archive download | KEEP explicit `True` (D2 addendum; `check_delivery.py:388-395` requires the literal). |
-| main.py:4345 (`_update_worker`) | `/usr/bin/systemctl restart plugin_loader` | KEEP explicit `True`; same poisoning class as S-BE-06 (restart path, latent). |
-| main.py:4429 (`_backend_switch_worker`) | `BACKEND_HELPER write_config target` | KEEP explicit `True`; helper is a system-side executable. |
-| main.py:4457 (`_backend_switch_worker`) | `BACKEND_HELPER write_config rb_prev` | KEEP explicit `True`; helper is a system-side executable. |
-| main.py:4463 (`_backend_switch_worker`) | `BACKEND_HELPER restart_units target` | KEEP explicit `True`; helper is a system-side executable. |
-| main.py:4479 (`_backend_switch_worker`) | `rb_cmd` loop (`systemctl enable/start rb_prev`, `restart NetworkManager`) | KEEP explicit `True`; absolute-path system binaries. |
-| main.py:4526 (`_backend_switch_worker`) | `BACKEND_HELPER restart_units other` | KEEP explicit `True`; helper is a system-side executable. |
-| main.py:4621 (`_backend_switch_worker` repair) | `BACKEND_HELPER write_config rb_prev` | KEEP explicit `True`; helper is a system-side executable. |
-| main.py:4627 (`_backend_switch_worker` repair) | `BACKEND_HELPER restart_units target` | KEEP explicit `True`; helper is a system-side executable. |
-| main.py:4643 (`_backend_switch_worker` repair) | `rb_cmd` loop (`systemctl enable/start rb_prev`, `restart NetworkManager`) | KEEP explicit `True`; absolute-path system binaries. |
-| main.py:4780 (`_generic_backend_switch_worker`) | `cmd` loop (`systemctl stop/disable other`, `enable/start target`) | KEEP explicit `True`; absolute-path system binaries. |
-| main.py:4790 (`_generic_backend_switch_worker`) | `/usr/bin/systemctl restart NetworkManager` | KEEP explicit `True`; absolute-path system binary. |
-| main.py:4896 (`_generic_backend_switch_worker` rollback) | `step_cmd` loop (`systemctl enable/start prev`, `restart NetworkManager`) | KEEP explicit `True`; absolute-path system binaries. |
+| main.py:3968 (`check_for_update`) | `/usr/bin/curl` release check | KEEP explicit `True` (D2 addendum; `check_delivery.py:388-395` requires the literal). |
+| main.py:4228 (`_update_worker`) | `curl_cmd` archive download | KEEP explicit `True` (D2 addendum; `check_delivery.py:388-395` requires the literal). |
+| main.py:4351 (`_update_worker`) | `/usr/bin/systemctl restart plugin_loader` | KEEP explicit `True`; same poisoning class as S-BE-06 (restart path, latent). |
+| main.py:4435 (`_backend_switch_worker`) | `BACKEND_HELPER write_config target` | KEEP explicit `True`; helper is a system-side executable. |
+| main.py:4463 (`_backend_switch_worker`) | `BACKEND_HELPER write_config rb_prev` | KEEP explicit `True`; helper is a system-side executable. |
+| main.py:4469 (`_backend_switch_worker`) | `BACKEND_HELPER restart_units target` | KEEP explicit `True`; helper is a system-side executable. |
+| main.py:4485 (`_backend_switch_worker`) | `rb_cmd` loop (`systemctl enable/start rb_prev`, `restart NetworkManager`) | KEEP explicit `True`; absolute-path system binaries. |
+| main.py:4532 (`_backend_switch_worker`) | `BACKEND_HELPER restart_units other` | KEEP explicit `True`; helper is a system-side executable. |
+| main.py:4627 (`_backend_switch_worker` repair) | `BACKEND_HELPER write_config rb_prev` | KEEP explicit `True`; helper is a system-side executable. |
+| main.py:4633 (`_backend_switch_worker` repair) | `BACKEND_HELPER restart_units target` | KEEP explicit `True`; helper is a system-side executable. |
+| main.py:4649 (`_backend_switch_worker` repair) | `rb_cmd` loop (`systemctl enable/start rb_prev`, `restart NetworkManager`) | KEEP explicit `True`; absolute-path system binaries. |
+| main.py:4786 (`_generic_backend_switch_worker`) | `cmd` loop (`systemctl stop/disable other`, `enable/start target`) | KEEP explicit `True`; absolute-path system binaries. |
+| main.py:4796 (`_generic_backend_switch_worker`) | `/usr/bin/systemctl restart NetworkManager` | KEEP explicit `True`; absolute-path system binary. |
+| main.py:4902 (`_generic_backend_switch_worker` rollback) | `step_cmd` loop (`systemctl enable/start prev`, `restart NetworkManager`) | KEEP explicit `True`; absolute-path system binaries. |
 
 ## Tally
 

@@ -769,6 +769,7 @@ class TruthfulResultsTests(unittest.IsolatedAsyncioTestCase):
         # PCIe ASPM write failure reports its own code.
         h = self.fixture(power_save_disabled=False, driver="rtw88")
         h.fail_paths = {PCIE_DEVICE + "/link/l0s_aspm"}
+        h.fs[PCIE_DEVICE + "/link/l0s_aspm"] = "1"
         result = await h.plugin.set_power_save(True)
         self.assertFalse(result["success"])
         self.assertEqual(result.get("error"), "pcie_failed")
